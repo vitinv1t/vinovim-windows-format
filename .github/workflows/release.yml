@@ -1,0 +1,93 @@
+name: Release
+
+# Cria uma release no GitHub com o .exe sempre que for publicada uma tag vX.Y.Z
+#   git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag a publicar (ex.: v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      PROJETO: app/VinovimFormat/VinovimFormat.csproj
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      HAS_CERT: ${{ secrets.AZURE_SIGNING_ENDPOINT != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Versão a partir da tag
+        id: versao
+        shell: pwsh
+        run: |
+          $v = "$env:TAG".TrimStart('v')
+          "versao=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Compilar (x64 e ARM64, ficheiro único, sem dependências)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          foreach ($rid in 'win-x64','win-arm64') {
+            dotnet publish $env:PROJETO -c Release -r $rid --self-contained true `
+              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+              -p:EnableCompressionInSingleFile=true -p:DebugType=None `
+              -p:Version=${{ steps.versao.outputs.versao }} -o "out/$rid"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $sufixo = if ($rid -eq 'win-x64') { 'x64' } else { 'arm64' }
+            Copy-Item "out/$rid/VinovimWindowsFormat.exe" "dist/VinovimWindowsFormat-${{ steps.versao.outputs.versao }}-$sufixo.exe"
+          }
+
+      # Assinatura opcional com Azure Trusted Signing.
+      # Ativa-se sozinha quando existirem os secrets AZURE_* no repositório.
+      - name: Assinar executáveis (Azure Trusted Signing)
+        if: env.HAS_CERT == 'true'
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Gerar SHA256SUMS.txt
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\*.exe | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Set-Content -Encoding ascii dist\SHA256SUMS.txt
+          Get-Content dist\SHA256SUMS.txt
+
+      - name: Publicar release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Vinovim Windows Format ${{ env.TAG }}
+          generate_release_notes: true
+          body: |
+            Formata e reinstala o Windows 10/11 sem pen-drive.
+
+            - **VinovimWindowsFormat-${{ steps.versao.outputs.versao }}-x64.exe**: a maioria dos PCs (Intel/AMD)
+            - **VinovimWindowsFormat-${{ steps.versao.outputs.versao }}-arm64.exe**: PCs com processador ARM (Snapdragon)
+
+            Verifique a integridade com `SHA256SUMS.txt`.
+          files: |
+            dist/*.exe
+            dist/SHA256SUMS.txt
