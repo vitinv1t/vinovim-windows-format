@@ -71,7 +71,7 @@ Write-Output $p.DriveLetter";
     /// <summary>Copia todo o conteúdo da ISO montada para a partição, reportando a percentagem.</summary>
     public static async Task CopiarIsoAsync(string raizIso, string destino, Action<string> log, IProgress<double> progresso)
     {
-        var opcoes = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 };
+        var opcoes = new System.IO.EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 };
         var total = Directory.EnumerateFiles(raizIso, "*", opcoes).Sum(f => new FileInfo(f).Length);
         log($"A copiar os ficheiros de instalação ({total / 1024d / 1024 / 1024:0.0} GB)...");
 
