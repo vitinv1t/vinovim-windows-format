@@ -9,7 +9,7 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans", display
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://vinovim-windows-format.vercel.app"),
+  metadataBase: new URL("https://vinovimwindows.vercel.app"),
   title: "Vinovim Windows Format · Formatar o Windows sem pen-drive",
   description:
     "Formate e reinstale o Windows 10 e 11 sem pen-drive, ou repare o \"Repor este PC\" avariado. Gratuito, com o instalador oficial da Microsoft.",

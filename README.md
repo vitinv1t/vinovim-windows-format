@@ -7,7 +7,7 @@
 <p align="center">Formata e reinstala o Windows 10 e 11 <b>sem pen-drive</b>, ou repara o "Repor este PC" avariado.</p>
 
 <p align="center">
-  <a href="https://vinovim-windows-format.vercel.app">Site e download</a> ·
+  <a href="https://vinovimwindows.vercel.app">Site e download</a> ·
   <a href="../../releases/latest">Última versão</a> ·
   <a href="#como-funciona">Como funciona</a>
 </p>
