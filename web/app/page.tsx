@@ -1,12 +1,12 @@
 import { ComoFunciona } from "@/components/ComoFunciona";
-import { DownloadButton } from "@/components/DownloadButton";
+import { DownloadPainel } from "@/components/DownloadPainel";
 import { Footer } from "@/components/Footer";
 import { Hero } from "@/components/Hero";
 import { Icon, type NomeIcone } from "@/components/Icon";
 import { Nav } from "@/components/Nav";
 import { Reveal } from "@/components/Reveal";
 import { GITHUB_URL } from "@/lib/config";
-import { URL_RELEASES, formatarData, formatarTamanho, obterRelease } from "@/lib/release";
+import { obterRelease } from "@/lib/release";
 
 export const revalidate = 300;
 
@@ -75,7 +75,6 @@ const PERGUNTAS = [
 
 export default async function Inicio() {
   const release = await obterRelease();
-  const sha = release?.sha256sums;
 
   return (
     <>
@@ -173,51 +172,7 @@ export default async function Inicio() {
         <section id="download">
           <div className="wrap">
             <Reveal className="dl">
-              <div className="a">
-                <div className="rot">
-                  <i /> Download
-                </div>
-                <h2>{release ? `Versão ${release.versao.replace(/^v/, "")}` : "Primeira versão a caminho"}</h2>
-                <p className="lead">
-                  Um único ficheiro .exe, sem instalação. Abra, aceite o pedido de administrador e siga os 4 passos.
-                </p>
-                <div className="acoes">
-                  <DownloadButton release={release} alternativa />
-                </div>
-                {sha && (
-                  <p className="cmdl">
-                    Verificar: <a href={sha.url}>SHA256SUMS.txt</a> · Get-FileHash .\{release?.x64?.nome} -Algorithm SHA256
-                  </p>
-                )}
-              </div>
-              <div className="b">
-                <dl>
-                  <dt>Versão</dt>
-                  <dd>{release?.versao ?? "Em preparação"}</dd>
-                  <dt>Publicada</dt>
-                  <dd>{release ? formatarData(release.data) : "-"}</dd>
-                  <dt>Tamanho</dt>
-                  <dd>{release?.x64 ? formatarTamanho(release.x64.tamanho) : "-"}</dd>
-                  <dt>Sistemas</dt>
-                  <dd>Windows 10 e 11</dd>
-                  <dt>Processador</dt>
-                  <dd>x64 e ARM64</dd>
-                  <dt>Todas as versões</dt>
-                  <dd>
-                    <a href={URL_RELEASES}>GitHub Releases</a>
-                  </dd>
-                </dl>
-                <div className="req">
-                  {["15 GB livres no disco do Windows", "ISO oficial do Windows 10 ou 11", "Conta de administrador", "Portátil ligado ao carregador"].map(
-                    (r) => (
-                      <div key={r}>
-                        <Icon nome="check" tamanho={15} />
-                        {r}
-                      </div>
-                    ),
-                  )}
-                </div>
-              </div>
+              <DownloadPainel release={release} />
             </Reveal>
           </div>
         </section>

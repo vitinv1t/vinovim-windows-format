@@ -12,7 +12,25 @@ export type Release = {
 };
 
 type AssetGitHub = { name: string; browser_download_url: string; size: number };
-type ReleaseGitHub = { tag_name: string; published_at: string; html_url: string; assets: AssetGitHub[] };
+export type ReleaseGitHub = { tag_name: string; published_at: string; html_url: string; assets: AssetGitHub[] };
+
+export const URL_API_RELEASE = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+
+/** Converte a resposta da API do GitHub (usado no servidor e no browser). */
+export function converterRelease(dados: ReleaseGitHub): Release {
+  const achar = (teste: (n: string) => boolean): Artefacto | undefined => {
+    const a = dados.assets.find((x) => teste(x.name.toLowerCase()));
+    return a ? { nome: a.name, url: a.browser_download_url, tamanho: a.size } : undefined;
+  };
+  return {
+    versao: dados.tag_name,
+    data: dados.published_at,
+    url: dados.html_url,
+    x64: achar((n) => n.endsWith(".exe") && n.includes("x64")),
+    arm64: achar((n) => n.endsWith(".exe") && n.includes("arm64")),
+    sha256sums: achar((n) => n === "sha256sums.txt"),
+  };
+}
 
 /** Lê a release mais recente na API do GitHub (cache de 5 minutos). */
 export async function obterRelease(): Promise<Release | null> {
@@ -24,26 +42,12 @@ export async function obterRelease(): Promise<Release | null> {
     };
     if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
 
-    const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+    const r = await fetch(URL_API_RELEASE, {
       headers,
       next: { revalidate: 300 },
     });
     if (!r.ok) return null;
-    const dados = (await r.json()) as ReleaseGitHub;
-
-    const achar = (teste: (n: string) => boolean): Artefacto | undefined => {
-      const a = dados.assets.find((x) => teste(x.name.toLowerCase()));
-      return a ? { nome: a.name, url: a.browser_download_url, tamanho: a.size } : undefined;
-    };
-
-    return {
-      versao: dados.tag_name,
-      data: dados.published_at,
-      url: dados.html_url,
-      x64: achar((n) => n.endsWith(".exe") && n.includes("x64")),
-      arm64: achar((n) => n.endsWith(".exe") && n.includes("arm64")),
-      sha256sums: achar((n) => n === "sha256sums.txt"),
-    };
+    return converterRelease((await r.json()) as ReleaseGitHub);
   } catch {
     return null;
   }

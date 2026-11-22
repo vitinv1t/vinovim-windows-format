@@ -5,6 +5,7 @@ import { AppPreview } from "./AppPreview";
 import { DownloadButton } from "./DownloadButton";
 import { Icon } from "./Icon";
 import type { Release } from "@/lib/release";
+import { useRelease } from "./useRelease";
 
 const entrar = (atraso: number) => ({
   initial: { opacity: 0, y: 18 },
@@ -12,7 +13,8 @@ const entrar = (atraso: number) => ({
   transition: { duration: 0.6, delay: atraso, ease: [0.22, 1, 0.36, 1] as const },
 });
 
-export function Hero({ release }: { release: Release | null }) {
+export function Hero({ release: inicial }: { release: Release | null }) {
+  const release = useRelease(inicial);
   return (
     <div className="hero">
       <div className="grade" aria-hidden="true" />

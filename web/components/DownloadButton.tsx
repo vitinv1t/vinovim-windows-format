@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 import type { Release } from "@/lib/release";
+import { useRelease } from "./useRelease";
 
 type NavegadorComUA = Navigator & {
   userAgentData?: { getHighEntropyValues(dicas: string[]): Promise<{ architecture?: string; bitness?: string }> };
@@ -23,7 +24,8 @@ function contar(arquitetura: "x64" | "arm64") {
 }
 
 /** Botão principal: mostra a versão e o tamanho da release mais recente e escolhe x64 ou ARM64. */
-export function DownloadButton({ release, alternativa = false }: { release: Release | null; alternativa?: boolean }) {
+export function DownloadButton({ release: inicial, alternativa = false }: { release: Release | null; alternativa?: boolean }) {
+  const release = useRelease(inicial);
   const [arm, setArm] = useState(false);
 
   useEffect(() => {
