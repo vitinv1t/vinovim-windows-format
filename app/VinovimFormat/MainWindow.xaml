@@ -21,7 +21,7 @@
       <Setter Property="Foreground" Value="{StaticResource TextoMudo}"/>
       <Setter Property="Margin" Value="0,0,0,6"/>
     </Style>
-    <Style x:Key="Texto" TargetType="TextBlock">
+    <Style x:Key="Paragrafo" TargetType="TextBlock">
       <Setter Property="TextWrapping" Value="Wrap"/>
       <Setter Property="Foreground" Value="{StaticResource TextoFraco}"/>
       <Setter Property="LineHeight" Value="21"/>
@@ -104,7 +104,7 @@
         <StackPanel x:Name="PainelDiagnostico">
           <TextBlock Style="{StaticResource Rotulo}" Text="PASSO 1 DE 4"/>
           <TextBlock Style="{StaticResource Titulo}" Text="Diagnóstico do sistema"/>
-          <TextBlock Style="{StaticResource Texto}" Text="Antes de alterar o que quer que seja, a aplicação confirma que é seguro avançar. Itens a vermelho têm de ser resolvidos primeiro."/>
+          <TextBlock Style="{StaticResource Paragrafo}" Text="Antes de alterar o que quer que seja, a aplicação confirma que é seguro avançar. Itens a vermelho têm de ser resolvidos primeiro."/>
           <TextBlock x:Name="TxtResumo" Foreground="{StaticResource TextoFraco}" FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,14" Text="A analisar o computador..."/>
           <Border Style="{StaticResource Painel}">
             <ItemsControl x:Name="ListaDiagnostico" ItemTemplate="{StaticResource ModeloVerificacao}" ItemsPanel="{StaticResource Pilha}"/>
@@ -133,7 +133,7 @@
         <StackPanel x:Name="PainelModo" Visibility="Collapsed">
           <TextBlock Style="{StaticResource Rotulo}" Text="PASSO 2 DE 4"/>
           <TextBlock Style="{StaticResource Titulo}" Text="Modo de formatação"/>
-          <TextBlock Style="{StaticResource Texto}" Text="Nenhum dos modos precisa de pen-drive. Se não tiver a certeza, o Modo 1 é o equivalente a formatar com pen-drive."/>
+          <TextBlock Style="{StaticResource Paragrafo}" Text="Nenhum dos modos precisa de pen-drive. Se não tiver a certeza, o Modo 1 é o equivalente a formatar com pen-drive."/>
 
           <Border x:Name="PainelParticaoExistente" Background="#1AFBBF24" BorderBrush="#40FBBF24" BorderThickness="1" CornerRadius="10" Padding="16,12" Margin="0,0,0,14" Visibility="Collapsed">
             <DockPanel>
@@ -181,7 +181,7 @@
         <StackPanel x:Name="PainelIso" Visibility="Collapsed">
           <TextBlock Style="{StaticResource Rotulo}" Text="PASSO 3 DE 4"/>
           <TextBlock Style="{StaticResource Titulo}" Text="Imagem oficial do Windows"/>
-          <TextBlock x:Name="TxtIntroIso" Style="{StaticResource Texto}"
+          <TextBlock x:Name="TxtIntroIso" Style="{StaticResource Paragrafo}"
                      Text="A ISO faz o papel do pen-drive. Descarregue-a dos servidores da Microsoft (opção &quot;Transferir imagem de disco (ISO)&quot;), no mesmo idioma e arquitetura do seu Windows."/>
           <WrapPanel Margin="0,0,0,16">
             <Button Content="Windows 11 · página oficial" Margin="0,0,8,8" Click="BtnBaixar11_Click"/>
@@ -218,7 +218,7 @@
             <Border x:Name="AvisoApagar" Background="#14F87171" BorderBrush="#40F87171" BorderThickness="1" CornerRadius="10" Padding="16,14" Margin="0,4,0,16">
               <TextBlock x:Name="TxtAviso" TextWrapping="Wrap" LineHeight="21"/>
             </Border>
-            <TextBlock x:Name="TxtResumoFinal" Style="{StaticResource Texto}"/>
+            <TextBlock x:Name="TxtResumoFinal" Style="{StaticResource Paragrafo}"/>
 
             <TextBlock Style="{StaticResource Rotulo}" Text="CÓPIA DE SEGURANÇA (RECOMENDADO)"/>
             <DockPanel Margin="0,0,0,8">
@@ -254,7 +254,7 @@
           <StackPanel x:Name="VistaExecutar" Visibility="Collapsed">
             <TextBlock Style="{StaticResource Rotulo}" Text="EXECUÇÃO"/>
             <TextBlock x:Name="TxtTituloExec" Style="{StaticResource Titulo}" Text="A preparar…"/>
-            <TextBlock x:Name="TxtStatusExec" Style="{StaticResource Texto}" Text=""/>
+            <TextBlock x:Name="TxtStatusExec" Style="{StaticResource Paragrafo}" Text=""/>
             <ProgressBar x:Name="ProgressoExec" Maximum="100" Margin="0,0,0,16"/>
             <TextBox x:Name="TxtLog" Style="{StaticResource Log}" Height="300"/>
             <WrapPanel Margin="0,14,0,0">
