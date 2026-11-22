@@ -44,7 +44,7 @@ export async function obterRelease(): Promise<Release | null> {
 
     const r = await fetch(URL_API_RELEASE, {
       headers,
-      next: { revalidate: 300 },
+      next: { revalidate: 60 },
     });
     if (!r.ok) return null;
     return converterRelease((await r.json()) as ReleaseGitHub);

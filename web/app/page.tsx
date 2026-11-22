@@ -8,7 +8,7 @@ import { Reveal } from "@/components/Reveal";
 import { GITHUB_URL } from "@/lib/config";
 import { obterRelease } from "@/lib/release";
 
-export const revalidate = 300;
+export const revalidate = 60;
 
 const MODOS = [
   {
