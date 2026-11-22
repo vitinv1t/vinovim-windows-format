@@ -38,11 +38,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* Navegação */
 .nav { position: sticky; top: 0; z-index: 30; background: rgba(9, 9, 11, 0.78); backdrop-filter: blur(14px) saturate(140%); border-bottom: 1px solid var(--linha); }
 .nav .wrap { display: flex; align-items: center; gap: 32px; height: 64px; }
-.marca { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.02em; font-size: 15.5px; }
+.marca { display: flex; align-items: center; gap: 10px; white-space: nowrap; font-weight: 600; letter-spacing: -0.02em; font-size: 15.5px; }
 .marca span { color: var(--mudo); font-weight: 400; }
-.nav .links { display: flex; gap: 26px; margin-left: auto; color: var(--fraco); font-size: 14px; }
+.nav .links { display: flex; gap: 26px; margin-left: auto; color: var(--fraco); font-size: 14px; white-space: nowrap; }
 .nav .links a:hover { color: var(--texto); }
-@media (max-width: 760px) { .nav .links { display: none; } .nav .wrap { justify-content: space-between; } }
+@media (max-width: 920px) { .nav .links { display: none; } .nav .wrap { justify-content: space-between; } }
+@media (max-width: 420px) { .marca span { display: none; } }
 
 /* Botões */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 46px; padding: 0 20px; border-radius: 10px; font-weight: 500; font-size: 15px; border: 1px solid var(--linha); background: var(--sup); transition: border-color 0.2s, background 0.2s, transform 0.2s; white-space: nowrap; }
