@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using VinovimFormat.Models;
 using VinovimFormat.Services;
@@ -34,9 +35,11 @@ public partial class MainWindow : Window
     private bool _setupIniciado;
     private bool _fechar;
     private CancellationTokenSource? _ctsHash;
-    private CancellationTokenSource? _ctsDownload;
-    private IsoDownloadService.Sessao? _sessaoDownload;
-    private int _pedidoIdiomas;
+    private CoreWebView2DownloadOperation? _download;
+    private DownloadIsoWindow? _janelaDownload;
+    private DateTime _ultimaAmostra;
+    private long _bytesUltimaAmostra;
+    private double _velocidade;
     private Atualizacao? _atualizacao;
     private List<FaseExecucao> _fases = new();
 
@@ -92,13 +95,14 @@ public partial class MainWindow : Window
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (_fechar) return;
-        if (_ctsDownload is not null)
+        if (_download is not null)
         {
-            var d = MessageBox.Show("A ISO ainda está a ser descarregada. Fechar agora? O que já foi descarregado fica guardado e o download pode ser retomado.",
+            var d = MessageBox.Show("A ISO ainda está a ser descarregada. Fechar agora cancela o download. Fechar mesmo assim?",
                 "Vinovim Windows Format", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (d != MessageBoxResult.Yes) { e.Cancel = true; return; }
-            _ctsDownload.Cancel();
+            try { _download.Cancel(); } catch { }
         }
+        _janelaDownload?.Close();
         if (_ocupado && _execucaoIniciada)
         {
             var r = MessageBox.Show("Há uma operação em curso. Fechar agora pode deixar o processo a meio. Fechar mesmo assim?",
@@ -352,7 +356,7 @@ public partial class MainWindow : Window
         if (CmbVersao.ItemsSource is null)
         {
             CmbVersao.ItemsSource = new[] { "Windows 11", "Windows 10" };
-            CmbVersao.SelectedIndex = _sistema is { IsWindows11: false } && !ArmPc ? 1 : 0; // dispara o carregamento dos idiomas
+            CmbVersao.SelectedIndex = _sistema is { IsWindows11: false } && !ArmPc ? 1 : 0;
         }
         if (_iso is not null && _sistema is not null) MostrarCompatibilidade();
     }
@@ -366,55 +370,25 @@ public partial class MainWindow : Window
     private void LnkPaginaOficial_Click(object sender, RoutedEventArgs e) =>
         Abrir(IsoDownloadService.PaginaOficial(ProdutoEscolhido, ArmPc));
 
-    private async void CmbVersao_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void CmbVersao_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (CmbVersao.SelectedIndex < 0) return;
-        await CarregarIdiomasAsync();
-    }
-
-    private async Task CarregarIdiomasAsync()
-    {
-        var pedido = ++_pedidoIdiomas;
-        var produto = ProdutoEscolhido;
-        _sessaoDownload = null;
-        CmbIdioma.ItemsSource = null;
-        CmbIdioma.IsEnabled = false;
-        BtnDescarregarIso.IsEnabled = false;
-
-        if (produto == ProdutoWindows.Windows10 && ArmPc)
+        if (ProdutoEscolhido == ProdutoWindows.Windows10 && ArmPc)
         {
             TxtDownloadInfo.Text = "A Microsoft não disponibiliza a ISO do Windows 10 para processadores ARM64. Escolha o Windows 11.";
+            BtnDescarregarIso.IsEnabled = false;
             return;
         }
-        if (produto == ProdutoWindows.Windows10)
-            TxtDownloadInfo.Text = "A ligar aos servidores da Microsoft… Nota: o Windows 10 já não recebe atualizações de segurança gratuitas.";
-        else
-            TxtDownloadInfo.Text = "A ligar aos servidores da Microsoft…";
-
-        try
-        {
-            var (sessao, idiomas) = await IsoDownloadService.ObterIdiomasAsync(produto, ArmPc, CancellationToken.None);
-            if (pedido != _pedidoIdiomas) return; // o utilizador entretanto mudou de versão
-            _sessaoDownload = sessao;
-            CmbIdioma.ItemsSource = idiomas;
-            var recomendado = IsoDownloadService.IdiomaRecomendado(idiomas, _sistema?.Idioma ?? "pt-PT");
-            CmbIdioma.SelectedItem = recomendado;
-            CmbIdioma.IsEnabled = true;
-            BtnDescarregarIso.IsEnabled = _ctsDownload is null;
-            TxtDownloadInfo.Text = $"{idiomas.Count} idiomas disponíveis. Escolhemos {recomendado?.NomeLocalizado ?? "o primeiro"}, " +
-                                   $"para {(ArmPc ? "ARM64" : "x64")}. A ISO tem cerca de 5 a 7 GB.";
-        }
-        catch (Exception ex)
-        {
-            if (pedido != _pedidoIdiomas) return;
-            TxtDownloadInfo.Text = "Não foi possível ligar à Microsoft. " + ex.Message;
-            _log.Info("Download da ISO indisponível: " + ex.Message);
-        }
+        BtnDescarregarIso.IsEnabled = _download is null;
+        TxtDownloadInfo.Text = ProdutoEscolhido == ProdutoWindows.Windows10
+            ? "Abre a página oficial do Windows 10 dentro da app. Nota: o Windows 10 já não recebe atualizações de segurança gratuitas."
+            : $"Abre a página oficial do Windows 11{(ArmPc ? " para ARM64" : "")} dentro da app. Escolha a edição e o idioma, carregue em Download " +
+              "e a app guarda a ISO, mostra o progresso e carrega-a sozinha no fim.";
     }
 
-    private async void BtnDescarregarIso_Click(object sender, RoutedEventArgs e)
+    private void BtnDescarregarIso_Click(object sender, RoutedEventArgs e)
     {
-        if (_ctsDownload is not null || _sessaoDownload is null || CmbIdioma.SelectedItem is not IdiomaIso idioma) return;
+        if (_download is not null) return;
 
         var transferencias = IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
         var dlg = new OpenFolderDialog { Title = "Onde guardar a ISO do Windows" };
@@ -430,65 +404,84 @@ public partial class MainWindow : Window
             return;
         }
 
-        _ctsDownload = new CancellationTokenSource();
-        var ct = _ctsDownload.Token;
+        _janelaDownload?.Close();
+        _janelaDownload = new DownloadIsoWindow(ProdutoEscolhido, ArmPc, pasta) { Owner = this };
+        _janelaDownload.DownloadIniciado += AoIniciarDownload;
+        _janelaDownload.Closed += (_, _) => { if (_download is null) _janelaDownload = null; };
+        _log.Info($"Página oficial aberta: {IsoDownloadService.PaginaOficial(ProdutoEscolhido, ArmPc)} (destino: {pasta})");
+        _janelaDownload.Show();
+    }
+
+    private void AoIniciarDownload(CoreWebView2DownloadOperation operacao, string destino)
+    {
+        _download = operacao;
+        _ultimaAmostra = DateTime.UtcNow;
+        _bytesUltimaAmostra = 0;
+        _velocidade = 0;
+        _log.Info($"A descarregar {IOPath.GetFileName(destino)} para {IOPath.GetDirectoryName(destino)}");
+
         Ocupado(true);
         BtnDescarregarIso.IsEnabled = false;
         CmbVersao.IsEnabled = false;
-        CmbIdioma.IsEnabled = false;
         PainelProgressoDownload.Visibility = Visibility.Visible;
         Animar(PainelProgressoDownload);
         BarraDownload.Value = 0;
-        TxtProgressoDownload.Text = "A pedir o link à Microsoft…";
+        TxtProgressoDownload.Text = $"A descarregar {IOPath.GetFileName(destino)}…";
+        Activate();
 
-        string? concluido = null;
-        try
+        operacao.BytesReceivedChanged += (_, _) => AtualizarProgressoDownload(operacao);
+        operacao.StateChanged += async (_, _) => await AoMudarEstadoDownload(operacao, destino);
+    }
+
+    private void AtualizarProgressoDownload(CoreWebView2DownloadOperation op)
+    {
+        var agora = DateTime.UtcNow;
+        var dt = (agora - _ultimaAmostra).TotalSeconds;
+        if (dt < 0.5) return;
+        var instantanea = (op.BytesReceived - _bytesUltimaAmostra) / dt;
+        _velocidade = _velocidade == 0 ? instantanea : _velocidade * 0.7 + instantanea * 0.3;
+        _ultimaAmostra = agora;
+        _bytesUltimaAmostra = op.BytesReceived;
+
+        var total = (long)(op.TotalBytesToReceive ?? 0);
+        BarraDownload.Value = total > 0 ? op.BytesReceived * 100d / total : 0;
+        TxtProgressoDownload.Text = FormatarProgresso(new ProgressoDownload(op.BytesReceived, total, _velocidade));
+    }
+
+    private async Task AoMudarEstadoDownload(CoreWebView2DownloadOperation op, string destino)
+    {
+        if (op.State == CoreWebView2DownloadState.InProgress) return;
+
+        _download = null;
+        Ocupado(false);
+        BtnDescarregarIso.IsEnabled = true;
+        CmbVersao.IsEnabled = true;
+        _janelaDownload?.Close();
+        _janelaDownload = null;
+
+        if (op.State == CoreWebView2DownloadState.Completed)
         {
-            var link = await IsoDownloadService.ObterLinkAsync(_sessaoDownload, idioma, _sistema?.Arquitetura ?? "x64", ct);
-            var destino = IOPath.Combine(pasta, IsoDownloadService.NomeFicheiro(link));
-            _log.Info($"A descarregar {IOPath.GetFileName(destino)} ({idioma.Nome}) de {link.Host} para {pasta}");
-
-            var progresso = new Progress<ProgressoDownload>(p =>
-            {
-                BarraDownload.Value = p.Total > 0 ? p.Recebidos * 100d / p.Total : 0;
-                TxtProgressoDownload.Text = FormatarProgresso(p);
-            });
-            await Task.Run(() => IsoDownloadService.DescarregarAsync(link, destino, progresso, ct), ct);
-
             BarraDownload.Value = 100;
             TxtProgressoDownload.Text = "Download concluído. A verificar a ISO…";
             _log.Info("ISO descarregada: " + destino);
-            concluido = destino;
-        }
-        catch (OperationCanceledException)
-        {
-            TxtProgressoDownload.Text = "Download cancelado. O que já foi descarregado fica guardado: carregue em Descarregar para retomar.";
-            _log.Info("Download da ISO cancelado.");
-        }
-        catch (Exception ex)
-        {
-            TxtProgressoDownload.Text = "O download falhou: " + ex.Message;
-            _log.Info("Erro no download da ISO: " + ex);
-        }
-        finally
-        {
-            _ctsDownload?.Dispose();
-            _ctsDownload = null;
-            Ocupado(false);
-            BtnDescarregarIso.IsEnabled = _sessaoDownload is not null;
-            CmbVersao.IsEnabled = true;
-            CmbIdioma.IsEnabled = CmbIdioma.ItemsSource is not null;
-        }
-
-        if (concluido is not null)
-        {
             if (_sistema is not null)
                 _sistema.EspacoLivre = new DriveInfo(IOPath.GetPathRoot(Environment.SystemDirectory)!).AvailableFreeSpace;
-            await CarregarIsoAsync(concluido);
+            await CarregarIsoAsync(destino);
+        }
+        else
+        {
+            var motivo = op.InterruptReason == CoreWebView2DownloadInterruptReason.UserCanceled
+                ? "Download cancelado."
+                : $"O download foi interrompido ({op.InterruptReason}). Carregue em \"Descarregar a ISO oficial\" para tentar de novo.";
+            TxtProgressoDownload.Text = motivo;
+            _log.Info(motivo);
         }
     }
 
-    private void BtnCancelarDownload_Click(object sender, RoutedEventArgs e) => _ctsDownload?.Cancel();
+    private void BtnCancelarDownload_Click(object sender, RoutedEventArgs e)
+    {
+        try { _download?.Cancel(); } catch { /* já terminou */ }
+    }
 
     private static string FormatarProgresso(ProgressoDownload p)
     {

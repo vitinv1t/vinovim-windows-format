@@ -1,0 +1,28 @@
+<Window x:Class="VinovimFormat.DownloadIsoWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Descarregar o Windows · página oficial da Microsoft"
+        Width="1020" Height="760" MinWidth="760" MinHeight="520"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="{StaticResource Fonte}" FontSize="14"
+        Background="{StaticResource Fundo}" Foreground="{StaticResource Texto}"
+        SourceInitialized="Window_SourceInitialized" Loaded="Window_Loaded">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="{StaticResource Superficie}" BorderBrush="{StaticResource Linha}" BorderThickness="0,0,0,1" Padding="20,14">
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Content="Fechar" Click="BtnFechar_Click" VerticalAlignment="Center"/>
+        <Path DockPanel.Dock="Left" Style="{StaticResource Icone}" Data="{StaticResource IcDownload}" Stroke="#4CA3EB" Width="18" Height="18" Margin="0,0,14,0" VerticalAlignment="Top"/>
+        <StackPanel Margin="0,0,16,0">
+          <TextBlock x:Name="TxtTitulo" FontWeight="SemiBold" Text="Página oficial da Microsoft"/>
+          <TextBlock x:Name="TxtInstrucoes" Foreground="{StaticResource TextoFraco}" FontSize="13" TextWrapping="Wrap" Margin="0,3,0,0"
+                     Text="Escolha a edição e o idioma e carregue no botão de download de 64 bits. A app guarda a ISO e trata do resto."/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <Grid>
+      <wv2:WebView2 x:Name="Navegador"/>
+      <TextBlock x:Name="TxtCarregar" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource TextoFraco}" Text="A abrir a página da Microsoft…"/>
+    </Grid>
+  </DockPanel>
+</Window>

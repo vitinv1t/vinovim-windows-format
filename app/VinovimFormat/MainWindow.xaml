@@ -257,23 +257,21 @@
               <TextBlock Style="{StaticResource Rotulo}" Text="DESCARREGAR DOS SERVIDORES DA MICROSOFT"/>
               <Grid Margin="0,2,0,0">
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="10"/>
-                  <ColumnDefinition Width="1.4*"/>
+                  <ColumnDefinition Width="220"/>
                   <ColumnDefinition Width="10"/>
                   <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <ComboBox x:Name="CmbVersao" SelectionChanged="CmbVersao_SelectionChanged"/>
-                <ComboBox x:Name="CmbIdioma" Grid.Column="2" IsEnabled="False"/>
-                <Button x:Name="BtnDescarregarIso" Grid.Column="4" Style="{StaticResource Primario}" IsEnabled="False" Click="BtnDescarregarIso_Click">
+                <Button x:Name="BtnDescarregarIso" Grid.Column="2" Style="{StaticResource Primario}" Click="BtnDescarregarIso_Click">
                   <StackPanel Orientation="Horizontal">
                     <Path Style="{StaticResource Icone}" Data="{StaticResource IcDownload}" Stroke="White" Width="14" Height="14" Margin="0,0,8,0"/>
-                    <TextBlock Text="Descarregar" Foreground="White"/>
+                    <TextBlock Text="Descarregar a ISO oficial" Foreground="White"/>
                   </StackPanel>
                 </Button>
               </Grid>
               <TextBlock x:Name="TxtDownloadInfo" Foreground="{StaticResource TextoFraco}" FontSize="13" TextWrapping="Wrap" Margin="0,10,0,0"
-                         Text="Escolha a versão. O idioma do seu Windows é escolhido automaticamente."/>
+                         Text="Abre a página oficial da Microsoft dentro da app. Escolha a edição e o idioma, carregue em Download e a app guarda a ISO, mostra o progresso e carrega-a sozinha no fim."/>
               <StackPanel x:Name="PainelProgressoDownload" Margin="0,12,0,0" Visibility="Collapsed">
                 <ProgressBar x:Name="BarraDownload" Maximum="100" Margin="0,0,0,10"/>
                 <DockPanel>
@@ -282,8 +280,8 @@
                 </DockPanel>
               </StackPanel>
               <TextBlock FontSize="12.5" Foreground="{StaticResource TextoMudo}" TextWrapping="Wrap" Margin="0,12,0,0">
-                <Run Text="Se o download direto falhar, use a"/>
-                <Hyperlink Foreground="#4CA3EB" TextDecorations="{x:Null}" Click="LnkPaginaOficial_Click"><Run Text="página oficial da Microsoft"/></Hyperlink><Run Text="."/>
+                <Run Text="Prefere o seu browser? Abra a"/>
+                <Hyperlink Foreground="#4CA3EB" TextDecorations="{x:Null}" Click="LnkPaginaOficial_Click"><Run Text="página oficial da Microsoft"/></Hyperlink><Run Text=" e depois escolha a ISO abaixo."/>
               </TextBlock>
             </StackPanel>
           </Border>
