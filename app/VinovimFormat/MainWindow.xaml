@@ -66,6 +66,64 @@
     </DataTemplate>
 
     <ItemsPanelTemplate x:Key="Pilha"><StackPanel/></ItemsPanelTemplate>
+
+    <!-- Uma fase da execução: pendente, em curso (a rodar), feita, erro ou saltada -->
+    <DataTemplate x:Key="ModeloFase">
+      <Border BorderBrush="{StaticResource Linha}" BorderThickness="0,0,0,1" Padding="16,11">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="32"/>
+            <ColumnDefinition/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <Grid Width="18" Height="18" HorizontalAlignment="Left" VerticalAlignment="Center">
+            <Ellipse x:Name="Circulo" Stroke="{StaticResource LinhaForte}" StrokeThickness="1.5"/>
+            <Path x:Name="Ic" Style="{StaticResource Icone}" Data="{StaticResource IcCheck}" Width="14" Height="14" Visibility="Collapsed"/>
+            <Path x:Name="Roda" Style="{StaticResource Icone}" Data="{StaticResource IcSpinner}" Stroke="{StaticResource Destaque}"
+                  StrokeThickness="2" Width="18" Height="18" Visibility="Collapsed" RenderTransformOrigin="0.5,0.5">
+              <Path.RenderTransform><RotateTransform/></Path.RenderTransform>
+            </Path>
+          </Grid>
+          <TextBlock x:Name="Nome" Grid.Column="1" Text="{Binding Nome}" Foreground="{StaticResource TextoMudo}" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="2" Text="{Binding Detalhe}" Foreground="{StaticResource TextoMudo}" FontSize="12.5" VerticalAlignment="Center" Margin="12,0,0,0"/>
+        </Grid>
+      </Border>
+      <DataTemplate.Triggers>
+        <DataTrigger Binding="{Binding Estado}" Value="EmCurso">
+          <Setter TargetName="Circulo" Property="Visibility" Value="Collapsed"/>
+          <Setter TargetName="Roda" Property="Visibility" Value="Visible"/>
+          <Setter TargetName="Nome" Property="Foreground" Value="{StaticResource Texto}"/>
+          <Setter TargetName="Nome" Property="FontWeight" Value="SemiBold"/>
+          <DataTrigger.EnterActions>
+            <BeginStoryboard x:Name="Girar">
+              <Storyboard>
+                <DoubleAnimation Storyboard.TargetName="Roda" Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                 From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever"/>
+              </Storyboard>
+            </BeginStoryboard>
+          </DataTrigger.EnterActions>
+          <DataTrigger.ExitActions>
+            <StopStoryboard BeginStoryboardName="Girar"/>
+          </DataTrigger.ExitActions>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Estado}" Value="Feito">
+          <Setter TargetName="Circulo" Property="Visibility" Value="Collapsed"/>
+          <Setter TargetName="Ic" Property="Visibility" Value="Visible"/>
+          <Setter TargetName="Ic" Property="Stroke" Value="{StaticResource Ok}"/>
+          <Setter TargetName="Nome" Property="Foreground" Value="{StaticResource TextoFraco}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Estado}" Value="Erro">
+          <Setter TargetName="Circulo" Property="Visibility" Value="Collapsed"/>
+          <Setter TargetName="Ic" Property="Visibility" Value="Visible"/>
+          <Setter TargetName="Ic" Property="Data" Value="{StaticResource IcX}"/>
+          <Setter TargetName="Ic" Property="Stroke" Value="{StaticResource Erro}"/>
+          <Setter TargetName="Nome" Property="Foreground" Value="{StaticResource Erro}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Estado}" Value="Saltada">
+          <Setter TargetName="Circulo" Property="StrokeDashArray" Value="2 2"/>
+        </DataTrigger>
+      </DataTemplate.Triggers>
+    </DataTemplate>
   </Window.Resources>
 
   <DockPanel>
@@ -81,7 +139,18 @@
             <TextBlock Text="Windows Format" Foreground="{StaticResource TextoMudo}" FontSize="12"/>
           </StackPanel>
         </StackPanel>
-        <TextBlock DockPanel.Dock="Bottom" x:Name="TxtVersao" Foreground="{StaticResource TextoMudo}" FontSize="12" TextWrapping="Wrap"/>
+        <StackPanel DockPanel.Dock="Bottom">
+          <Border x:Name="PainelAtualizacao" Background="#1A0078D4" BorderBrush="#550078D4" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,14" Visibility="Collapsed">
+            <StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <Path Style="{StaticResource Icone}" Data="{StaticResource IcDownload}" Stroke="#4CA3EB" Width="14" Height="14" Margin="0,0,8,0"/>
+                <TextBlock x:Name="TxtAtualizacao" FontSize="12.5" FontWeight="SemiBold" Text="Nova versão disponível"/>
+              </StackPanel>
+              <Button Content="Descarregar" Style="{StaticResource Primario}" Height="30" FontSize="12.5" Click="BtnAtualizar_Click"/>
+            </StackPanel>
+          </Border>
+          <TextBlock x:Name="TxtVersao" Foreground="{StaticResource TextoMudo}" FontSize="12" TextWrapping="Wrap"/>
+        </StackPanel>
         <StackPanel x:Name="PainelPassos"/>
       </DockPanel>
     </Border>
@@ -182,12 +251,43 @@
           <TextBlock Style="{StaticResource Rotulo}" Text="PASSO 3 DE 4"/>
           <TextBlock Style="{StaticResource Titulo}" Text="Imagem oficial do Windows"/>
           <TextBlock x:Name="TxtIntroIso" Style="{StaticResource Paragrafo}"
-                     Text="A ISO faz o papel do pen-drive. Descarregue-a dos servidores da Microsoft (opção &quot;Transferir imagem de disco (ISO)&quot;), no mesmo idioma e arquitetura do seu Windows."/>
-          <WrapPanel Margin="0,0,0,16">
-            <Button Content="Windows 11 · página oficial" Margin="0,0,8,8" Click="BtnBaixar11_Click"/>
-            <Button Content="Windows 11 ARM64" Margin="0,0,8,8" Click="BtnBaixar11Arm_Click"/>
-            <Button Content="Windows 10 · página oficial" Margin="0,0,8,8" Click="BtnBaixar10_Click"/>
-          </WrapPanel>
+                     Text="A ISO faz o papel do pen-drive. A app descarrega-a diretamente da Microsoft, ou pode escolher uma que já tenha."/>
+          <Border Style="{StaticResource Painel}" Padding="18,16" Margin="0,0,0,22">
+            <StackPanel>
+              <TextBlock Style="{StaticResource Rotulo}" Text="DESCARREGAR DOS SERVIDORES DA MICROSOFT"/>
+              <Grid Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="10"/>
+                  <ColumnDefinition Width="1.4*"/>
+                  <ColumnDefinition Width="10"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="CmbVersao" SelectionChanged="CmbVersao_SelectionChanged"/>
+                <ComboBox x:Name="CmbIdioma" Grid.Column="2" IsEnabled="False"/>
+                <Button x:Name="BtnDescarregarIso" Grid.Column="4" Style="{StaticResource Primario}" IsEnabled="False" Click="BtnDescarregarIso_Click">
+                  <StackPanel Orientation="Horizontal">
+                    <Path Style="{StaticResource Icone}" Data="{StaticResource IcDownload}" Stroke="White" Width="14" Height="14" Margin="0,0,8,0"/>
+                    <TextBlock Text="Descarregar" Foreground="White"/>
+                  </StackPanel>
+                </Button>
+              </Grid>
+              <TextBlock x:Name="TxtDownloadInfo" Foreground="{StaticResource TextoFraco}" FontSize="13" TextWrapping="Wrap" Margin="0,10,0,0"
+                         Text="Escolha a versão. O idioma do seu Windows é escolhido automaticamente."/>
+              <StackPanel x:Name="PainelProgressoDownload" Margin="0,12,0,0" Visibility="Collapsed">
+                <ProgressBar x:Name="BarraDownload" Maximum="100" Margin="0,0,0,10"/>
+                <DockPanel>
+                  <Button x:Name="BtnCancelarDownload" Content="Cancelar" DockPanel.Dock="Right" Height="30" FontSize="12.5" Click="BtnCancelarDownload_Click"/>
+                  <TextBlock x:Name="TxtProgressoDownload" FontFamily="{StaticResource FonteMono}" FontSize="12.5" Foreground="{StaticResource TextoFraco}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                </DockPanel>
+              </StackPanel>
+              <TextBlock FontSize="12.5" Foreground="{StaticResource TextoMudo}" TextWrapping="Wrap" Margin="0,12,0,0">
+                <Run Text="Se o download direto falhar, use a"/>
+                <Hyperlink Foreground="#4CA3EB" TextDecorations="{x:Null}" Click="LnkPaginaOficial_Click"><Run Text="página oficial da Microsoft"/></Hyperlink><Run Text="."/>
+              </TextBlock>
+            </StackPanel>
+          </Border>
+          <TextBlock Style="{StaticResource Rotulo}" Text="OU USE UMA ISO QUE JÁ TEM"/>
           <DockPanel Margin="0,0,0,12">
             <Button x:Name="BtnEscolherIso" Content="Escolher ISO…" Style="{StaticResource Primario}" DockPanel.Dock="Right" Margin="8,0,0,0" Click="BtnEscolherIso_Click"/>
             <TextBox x:Name="TxtCaminhoIso" IsReadOnly="True" VerticalContentAlignment="Center"/>
@@ -218,7 +318,9 @@
             <Border x:Name="AvisoApagar" Background="#14F87171" BorderBrush="#40F87171" BorderThickness="1" CornerRadius="10" Padding="16,14" Margin="0,4,0,16">
               <TextBlock x:Name="TxtAviso" TextWrapping="Wrap" LineHeight="21"/>
             </Border>
-            <TextBlock x:Name="TxtResumoFinal" Style="{StaticResource Paragrafo}"/>
+            <Border Style="{StaticResource Painel}" Padding="18,6" Margin="0,0,0,22">
+              <Grid x:Name="GradeResumo"/>
+            </Border>
 
             <TextBlock Style="{StaticResource Rotulo}" Text="CÓPIA DE SEGURANÇA (RECOMENDADO)"/>
             <DockPanel Margin="0,0,0,8">
@@ -252,15 +354,34 @@
           </StackPanel>
 
           <StackPanel x:Name="VistaExecutar" Visibility="Collapsed">
-            <TextBlock Style="{StaticResource Rotulo}" Text="EXECUÇÃO"/>
+            <TextBlock x:Name="TxtRotuloExec" Style="{StaticResource Rotulo}" Text="EXECUÇÃO"/>
             <TextBlock x:Name="TxtTituloExec" Style="{StaticResource Titulo}" Text="A preparar…"/>
             <TextBlock x:Name="TxtStatusExec" Style="{StaticResource Paragrafo}" Text=""/>
-            <ProgressBar x:Name="ProgressoExec" Maximum="100" Margin="0,0,0,16"/>
-            <TextBox x:Name="TxtLog" Style="{StaticResource Log}" Height="300"/>
-            <WrapPanel Margin="0,14,0,0">
-              <Button x:Name="BtnReiniciar" Content="Reiniciar agora" Style="{StaticResource Primario}" Margin="0,0,8,0" Visibility="Collapsed" Click="BtnReiniciar_Click"/>
-              <Button x:Name="BtnAbrirLog" Content="Abrir ficheiro de registo" Click="BtnAbrirLog_Click"/>
+            <ProgressBar x:Name="ProgressoExec" Maximum="100" Margin="0,0,0,18"/>
+
+            <Border x:Name="PainelConcluido" CornerRadius="10" BorderThickness="1" Padding="18,16" Margin="0,0,0,16" Visibility="Collapsed"
+                    Background="#144ADE80" BorderBrush="#404ADE80">
+              <DockPanel>
+                <Border DockPanel.Dock="Left" Width="36" Height="36" CornerRadius="18" Background="#264ADE80" Margin="0,0,14,0" VerticalAlignment="Top">
+                  <Path x:Name="IcConcluido" Style="{StaticResource Icone}" Data="{StaticResource IcCheck}" Stroke="{StaticResource Ok}" StrokeThickness="2" Width="18" Height="18"/>
+                </Border>
+                <StackPanel>
+                  <TextBlock x:Name="TxtConcluidoTitulo" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                  <TextBlock x:Name="TxtConcluidoTexto" Foreground="{StaticResource TextoFraco}" TextWrapping="Wrap" LineHeight="22"/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+
+            <Border Style="{StaticResource Painel}" Margin="0,0,0,16">
+              <ItemsControl x:Name="ListaFases" ItemTemplate="{StaticResource ModeloFase}" ItemsPanel="{StaticResource Pilha}"/>
+            </Border>
+
+            <WrapPanel Margin="0,0,0,12">
+              <Button x:Name="BtnReiniciar" Content="Reiniciar agora" Style="{StaticResource Primario}" Margin="0,0,8,8" Visibility="Collapsed" Click="BtnReiniciar_Click"/>
+              <Button x:Name="BtnMostrarLog" Content="Mostrar registo detalhado" Margin="0,0,8,8" Click="BtnMostrarLog_Click"/>
+              <Button x:Name="BtnAbrirLog" Content="Abrir ficheiro de registo" Margin="0,0,8,8" Click="BtnAbrirLog_Click"/>
             </WrapPanel>
+            <TextBox x:Name="TxtLog" Style="{StaticResource Log}" Height="260" Visibility="Collapsed"/>
           </StackPanel>
         </Grid>
 

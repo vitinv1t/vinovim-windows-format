@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using Microsoft.Win32;
 using VinovimFormat.Models;
 using VinovimFormat.Services;
@@ -16,10 +17,6 @@ namespace VinovimFormat;
 
 public partial class MainWindow : Window
 {
-    private const string UrlWin11 = "https://www.microsoft.com/software-download/windows11";
-    private const string UrlWin11Arm = "https://www.microsoft.com/software-download/windows11arm64";
-    private const string UrlWin10 = "https://www.microsoft.com/software-download/windows10";
-
     private readonly Logger _log = new();
     private readonly string[] _nomesPassos = { "Diagnóstico", "Modo", "Imagem ISO", "Confirmação" };
     private readonly string[] _iconesPassos = { "IcScan", "IcLayers", "IcDisc", "IcShield" };
@@ -37,12 +34,17 @@ public partial class MainWindow : Window
     private bool _setupIniciado;
     private bool _fechar;
     private CancellationTokenSource? _ctsHash;
+    private CancellationTokenSource? _ctsDownload;
+    private IsoDownloadService.Sessao? _sessaoDownload;
+    private int _pedidoIdiomas;
+    private Atualizacao? _atualizacao;
+    private List<FaseExecucao> _fases = new();
 
     public MainWindow()
     {
         InitializeComponent();
-        var versao = Assembly.GetExecutingAssembly().GetName().Version;
-        TxtVersao.Text = $"Versão {versao?.Major}.{versao?.Minor}.{versao?.Build}\nRegisto: {IOPath.GetFileName(_log.Arquivo)}";
+        var versao = UpdateService.VersaoAtual;
+        TxtVersao.Text = $"Versão {versao.Major}.{versao.Minor}.{Math.Max(0, versao.Build)}\nRegisto: {IOPath.GetFileName(_log.Arquivo)}";
         _log.NovaLinha += linha => Dispatcher.InvokeAsync(() =>
         {
             TxtLog.AppendText(linha + Environment.NewLine);
@@ -81,14 +83,22 @@ public partial class MainWindow : Window
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        _log.Info("Vinovim Windows Format iniciado.");
+        _log.Info($"Vinovim Windows Format {UpdateService.VersaoAtual} iniciado.");
         IrPara(0);
+        _ = VerificarAtualizacaoAsync();
         await DiagnosticarAsync();
     }
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (_fechar) return;
+        if (_ctsDownload is not null)
+        {
+            var d = MessageBox.Show("A ISO ainda está a ser descarregada. Fechar agora? O que já foi descarregado fica guardado e o download pode ser retomado.",
+                "Vinovim Windows Format", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (d != MessageBoxResult.Yes) { e.Cancel = true; return; }
+            _ctsDownload.Cancel();
+        }
         if (_ocupado && _execucaoIniciada)
         {
             var r = MessageBox.Show("Há uma operação em curso. Fechar agora pode deixar o processo a meio. Fechar mesmo assim?",
@@ -115,10 +125,36 @@ public partial class MainWindow : Window
         if (passo == 2) PrepararPassoIso();
         if (passo == 3) PrepararConfirmacao();
 
+        Animar(Paineis[passo]);
         Rolagem.ScrollToTop();
         DesenharPassos();
         AtualizarBotoes();
     }
+
+    /// <summary>Transição suave: o painel entra com fade e um pequeno deslize.</summary>
+    private static void Animar(UIElement elemento)
+    {
+        var duracao = TimeSpan.FromMilliseconds(280);
+        var curva = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var deslize = new TranslateTransform(16, 0);
+        elemento.RenderTransform = deslize;
+        elemento.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duracao) { EasingFunction = curva });
+        deslize.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(16, 0, duracao) { EasingFunction = curva });
+    }
+
+    // ───────────────────────── Atualizações ─────────────────────────
+
+    private async Task VerificarAtualizacaoAsync()
+    {
+        _atualizacao = await UpdateService.VerificarAsync();
+        if (_atualizacao is null) return;
+        TxtAtualizacao.Text = $"Versão {_atualizacao.Etiqueta} disponível";
+        PainelAtualizacao.Visibility = Visibility.Visible;
+        Animar(PainelAtualizacao);
+        _log.Info($"Há uma versão nova: {_atualizacao.Etiqueta}.");
+    }
+
+    private void BtnAtualizar_Click(object sender, RoutedEventArgs e) => Abrir(_atualizacao?.Pagina ?? UpdateService.Site);
 
     private void DesenharPassos()
     {
@@ -311,15 +347,164 @@ public partial class MainWindow : Window
     {
         TxtIntroIso.Text = Modo == ModoFormatacao.Reparar
             ? "Opcional no Modo 3: com uma ISO, o DISM consegue reparar o sistema mesmo sem ligação ao Windows Update. Pode continuar sem ISO."
-            : "A ISO faz o papel do pen-drive. Descarregue-a dos servidores da Microsoft (opção \"Transferir imagem de disco (ISO)\"), no mesmo idioma e arquitetura do seu Windows.";
+            : "A ISO faz o papel do pen-drive. A app descarrega-a diretamente da Microsoft, ou pode escolher uma que já tenha.";
+
+        if (CmbVersao.ItemsSource is null)
+        {
+            CmbVersao.ItemsSource = new[] { "Windows 11", "Windows 10" };
+            CmbVersao.SelectedIndex = _sistema is { IsWindows11: false } && !ArmPc ? 1 : 0; // dispara o carregamento dos idiomas
+        }
         if (_iso is not null && _sistema is not null) MostrarCompatibilidade();
     }
 
     private static void Abrir(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
 
-    private void BtnBaixar11_Click(object sender, RoutedEventArgs e) => Abrir(UrlWin11);
-    private void BtnBaixar11Arm_Click(object sender, RoutedEventArgs e) => Abrir(UrlWin11Arm);
-    private void BtnBaixar10_Click(object sender, RoutedEventArgs e) => Abrir(UrlWin10);
+    private bool ArmPc => _sistema?.Arquitetura == "arm64";
+
+    private ProdutoWindows ProdutoEscolhido => CmbVersao.SelectedIndex == 1 ? ProdutoWindows.Windows10 : ProdutoWindows.Windows11;
+
+    private void LnkPaginaOficial_Click(object sender, RoutedEventArgs e) =>
+        Abrir(IsoDownloadService.PaginaOficial(ProdutoEscolhido, ArmPc));
+
+    private async void CmbVersao_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CmbVersao.SelectedIndex < 0) return;
+        await CarregarIdiomasAsync();
+    }
+
+    private async Task CarregarIdiomasAsync()
+    {
+        var pedido = ++_pedidoIdiomas;
+        var produto = ProdutoEscolhido;
+        _sessaoDownload = null;
+        CmbIdioma.ItemsSource = null;
+        CmbIdioma.IsEnabled = false;
+        BtnDescarregarIso.IsEnabled = false;
+
+        if (produto == ProdutoWindows.Windows10 && ArmPc)
+        {
+            TxtDownloadInfo.Text = "A Microsoft não disponibiliza a ISO do Windows 10 para processadores ARM64. Escolha o Windows 11.";
+            return;
+        }
+        if (produto == ProdutoWindows.Windows10)
+            TxtDownloadInfo.Text = "A ligar aos servidores da Microsoft… Nota: o Windows 10 já não recebe atualizações de segurança gratuitas.";
+        else
+            TxtDownloadInfo.Text = "A ligar aos servidores da Microsoft…";
+
+        try
+        {
+            var (sessao, idiomas) = await IsoDownloadService.ObterIdiomasAsync(produto, ArmPc, CancellationToken.None);
+            if (pedido != _pedidoIdiomas) return; // o utilizador entretanto mudou de versão
+            _sessaoDownload = sessao;
+            CmbIdioma.ItemsSource = idiomas;
+            var recomendado = IsoDownloadService.IdiomaRecomendado(idiomas, _sistema?.Idioma ?? "pt-PT");
+            CmbIdioma.SelectedItem = recomendado;
+            CmbIdioma.IsEnabled = true;
+            BtnDescarregarIso.IsEnabled = _ctsDownload is null;
+            TxtDownloadInfo.Text = $"{idiomas.Count} idiomas disponíveis. Escolhemos {recomendado?.NomeLocalizado ?? "o primeiro"}, " +
+                                   $"para {(ArmPc ? "ARM64" : "x64")}. A ISO tem cerca de 5 a 7 GB.";
+        }
+        catch (Exception ex)
+        {
+            if (pedido != _pedidoIdiomas) return;
+            TxtDownloadInfo.Text = "Não foi possível ligar à Microsoft. " + ex.Message;
+            _log.Info("Download da ISO indisponível: " + ex.Message);
+        }
+    }
+
+    private async void BtnDescarregarIso_Click(object sender, RoutedEventArgs e)
+    {
+        if (_ctsDownload is not null || _sessaoDownload is null || CmbIdioma.SelectedItem is not IdiomaIso idioma) return;
+
+        var transferencias = IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        var dlg = new OpenFolderDialog { Title = "Onde guardar a ISO do Windows" };
+        if (Directory.Exists(transferencias)) dlg.InitialDirectory = transferencias;
+        if (dlg.ShowDialog(this) != true) return;
+        var pasta = dlg.FolderName;
+
+        var livre = new DriveInfo(IOPath.GetPathRoot(pasta)!).AvailableFreeSpace;
+        if (livre < 8L * 1024 * 1024 * 1024)
+        {
+            MessageBox.Show($"Só há {livre / 1024d / 1024 / 1024:0.0} GB livres nesse disco. A ISO precisa de cerca de 8 GB.",
+                "Vinovim Windows Format", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _ctsDownload = new CancellationTokenSource();
+        var ct = _ctsDownload.Token;
+        Ocupado(true);
+        BtnDescarregarIso.IsEnabled = false;
+        CmbVersao.IsEnabled = false;
+        CmbIdioma.IsEnabled = false;
+        PainelProgressoDownload.Visibility = Visibility.Visible;
+        Animar(PainelProgressoDownload);
+        BarraDownload.Value = 0;
+        TxtProgressoDownload.Text = "A pedir o link à Microsoft…";
+
+        string? concluido = null;
+        try
+        {
+            var link = await IsoDownloadService.ObterLinkAsync(_sessaoDownload, idioma, _sistema?.Arquitetura ?? "x64", ct);
+            var destino = IOPath.Combine(pasta, IsoDownloadService.NomeFicheiro(link));
+            _log.Info($"A descarregar {IOPath.GetFileName(destino)} ({idioma.Nome}) de {link.Host} para {pasta}");
+
+            var progresso = new Progress<ProgressoDownload>(p =>
+            {
+                BarraDownload.Value = p.Total > 0 ? p.Recebidos * 100d / p.Total : 0;
+                TxtProgressoDownload.Text = FormatarProgresso(p);
+            });
+            await Task.Run(() => IsoDownloadService.DescarregarAsync(link, destino, progresso, ct), ct);
+
+            BarraDownload.Value = 100;
+            TxtProgressoDownload.Text = "Download concluído. A verificar a ISO…";
+            _log.Info("ISO descarregada: " + destino);
+            concluido = destino;
+        }
+        catch (OperationCanceledException)
+        {
+            TxtProgressoDownload.Text = "Download cancelado. O que já foi descarregado fica guardado: carregue em Descarregar para retomar.";
+            _log.Info("Download da ISO cancelado.");
+        }
+        catch (Exception ex)
+        {
+            TxtProgressoDownload.Text = "O download falhou: " + ex.Message;
+            _log.Info("Erro no download da ISO: " + ex);
+        }
+        finally
+        {
+            _ctsDownload?.Dispose();
+            _ctsDownload = null;
+            Ocupado(false);
+            BtnDescarregarIso.IsEnabled = _sessaoDownload is not null;
+            CmbVersao.IsEnabled = true;
+            CmbIdioma.IsEnabled = CmbIdioma.ItemsSource is not null;
+        }
+
+        if (concluido is not null)
+        {
+            if (_sistema is not null)
+                _sistema.EspacoLivre = new DriveInfo(IOPath.GetPathRoot(Environment.SystemDirectory)!).AvailableFreeSpace;
+            await CarregarIsoAsync(concluido);
+        }
+    }
+
+    private void BtnCancelarDownload_Click(object sender, RoutedEventArgs e) => _ctsDownload?.Cancel();
+
+    private static string FormatarProgresso(ProgressoDownload p)
+    {
+        static string Gb(long b) => $"{b / 1024d / 1024 / 1024:0.00} GB";
+        var texto = p.Total > 0 ? $"{Gb(p.Recebidos)} de {Gb(p.Total)}" : Gb(p.Recebidos);
+        if (p.BytesPorSegundo > 0)
+        {
+            texto += $"  ·  {p.BytesPorSegundo / 1024 / 1024:0.0} MB/s";
+            if (p.Total > p.Recebidos)
+            {
+                var falta = TimeSpan.FromSeconds((p.Total - p.Recebidos) / p.BytesPorSegundo);
+                texto += falta.TotalMinutes >= 1 ? $"  ·  faltam {Math.Ceiling(falta.TotalMinutes):0} min" : "  ·  falta menos de 1 min";
+            }
+        }
+        return texto;
+    }
 
     private async void BtnEscolherIso_Click(object sender, RoutedEventArgs e)
     {
@@ -458,13 +643,49 @@ public partial class MainWindow : Window
             ModoFormatacao.ReinstalacaoDireta => $"Modo 2 · setup.exe ({(Tipo == TipoReinstalacao.Limpa ? "limpa" : "manter ficheiros")})",
             _ => "Modo 3 · reparar o sistema",
         };
-        TxtResumoFinal.Text = $"{modo}\nPC: {s.NomeProduto} {s.EdicaoAmigavel} {s.VersaoExibicao} · ISO: {iso}\nAntes de começar é criado um ponto de restauro do sistema.";
+        PreencherResumo(new (string, string)[]
+        {
+            ("Modo", modo),
+            ("Este PC", $"{s.NomeProduto} {s.EdicaoAmigavel} {s.VersaoExibicao} · {s.Arquitetura}"),
+            ("Imagem ISO", iso),
+            ("Disco do Windows", $"{s.UnidadeSistema} · {s.EspacoLivreGb:0.0} GB livres"),
+            ("Antes de começar", "Ponto de restauro do sistema" + (s.BitLocker == BitLockerEstado.Ligado && Modo != ModoFormatacao.Reparar ? " e BitLocker suspenso" : "")),
+        });
 
         var formatar = Modo != ModoFormatacao.Reparar;
         PainelPalavra.Visibility = formatar ? Visibility.Visible : Visibility.Collapsed;
         ChkBackup.Visibility = formatar ? Visibility.Visible : Visibility.Collapsed;
         ChkBitLocker.Visibility = formatar && s.BitLocker == BitLockerEstado.Ligado ? Visibility.Visible : Visibility.Collapsed;
         TxtConfirmacao.Text = "";
+    }
+
+    private void PreencherResumo((string Rotulo, string Valor)[] linhas)
+    {
+        GradeResumo.Children.Clear();
+        GradeResumo.RowDefinitions.Clear();
+        GradeResumo.ColumnDefinitions.Clear();
+        GradeResumo.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+        GradeResumo.ColumnDefinitions.Add(new ColumnDefinition());
+        for (var i = 0; i < linhas.Length; i++)
+        {
+            GradeResumo.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var borda = new Thickness(0, 0, 0, i < linhas.Length - 1 ? 1 : 0);
+            var rotulo = new Border
+            {
+                BorderBrush = (Brush)FindResource("Linha"), BorderThickness = borda, Padding = new Thickness(0, 11, 12, 11),
+                Child = new TextBlock { Text = linhas[i].Rotulo, Foreground = (Brush)FindResource("TextoMudo"), FontSize = 13 },
+            };
+            var valor = new Border
+            {
+                BorderBrush = (Brush)FindResource("Linha"), BorderThickness = borda, Padding = new Thickness(0, 11, 0, 11),
+                Child = new TextBlock { Text = linhas[i].Valor, TextWrapping = TextWrapping.Wrap, FontSize = 13.5 },
+            };
+            Grid.SetRow(rotulo, i);
+            Grid.SetRow(valor, i);
+            Grid.SetColumn(valor, 1);
+            GradeResumo.Children.Add(rotulo);
+            GradeResumo.Children.Add(valor);
+        }
     }
 
     private void BtnEscolherPasta_Click(object sender, RoutedEventArgs e)
@@ -532,6 +753,63 @@ public partial class MainWindow : Window
 
     // ───────────────────────── Execução ─────────────────────────
 
+    private List<FaseExecucao> CriarFases()
+    {
+        var bitlocker = Modo != ModoFormatacao.Reparar && _sistema?.BitLocker == BitLockerEstado.Ligado;
+        var nomes = new List<string> { "Criar ponto de restauro" };
+        if (bitlocker) nomes.Add("Suspender o BitLocker");
+        nomes.AddRange(Modo switch
+        {
+            ModoFormatacao.ParticaoTemporaria => new[]
+            {
+                "Criar a partição VINOVIM_BOOT", "Copiar o instalador do Windows", "Preparar a limpeza automática",
+                "Configurar o arranque", "Ocultar a partição",
+            },
+            ModoFormatacao.ReinstalacaoDireta => new[] { "Iniciar o instalador oficial" },
+            _ => new[] { "DISM: reparar a imagem do Windows", "SFC: verificar ficheiros do sistema", "Ativar o Ambiente de Recuperação" },
+        });
+        return nomes.Select(n => new FaseExecucao(n)).ToList();
+    }
+
+    private FaseExecucao FaseQueComeca(string inicio) => _fases.First(f => f.Nome.StartsWith(inicio, StringComparison.Ordinal));
+
+    /// <summary>Executa uma fase: marca-a em curso, depois feita (ou com erro, relançando a exceção).</summary>
+    private async Task<T> Fase<T>(string inicio, Func<Task<T>> acao, Func<T, string>? detalhe = null)
+    {
+        var fase = FaseQueComeca(inicio);
+        fase.Estado = EstadoFase.EmCurso;
+        TxtTituloExec.Text = fase.Nome + "…";
+        try
+        {
+            var r = await acao();
+            fase.Estado = EstadoFase.Feito;
+            if (detalhe is not null) fase.Detalhe = detalhe(r);
+            return r;
+        }
+        catch
+        {
+            fase.Estado = EstadoFase.Erro;
+            throw;
+        }
+    }
+
+    private Task Fase(string inicio, Func<Task> acao) => Fase(inicio, async () => { await acao(); return true; });
+
+    private void MostrarConclusao(bool sucesso, string titulo, string texto)
+    {
+        TxtRotuloExec.Text = sucesso ? "CONCLUÍDO" : "INTERROMPIDO";
+        TxtConcluidoTitulo.Text = titulo;
+        TxtConcluidoTexto.Text = texto;
+        var conv = new BrushConverter();
+        PainelConcluido.Background = (Brush)conv.ConvertFrom(sucesso ? "#144ADE80" : "#14F87171")!;
+        PainelConcluido.BorderBrush = (Brush)conv.ConvertFrom(sucesso ? "#404ADE80" : "#40F87171")!;
+        IcConcluido.Data = (Geometry)FindResource(sucesso ? "IcCheck" : "IcX");
+        IcConcluido.Stroke = (Brush)FindResource(sucesso ? "Ok" : "Erro");
+        ((Border)IcConcluido.Parent).Background = (Brush)conv.ConvertFrom(sucesso ? "#264ADE80" : "#26F87171")!;
+        PainelConcluido.Visibility = Visibility.Visible;
+        Animar(PainelConcluido);
+    }
+
     private async Task ExecutarAsync()
     {
         var simular = ChkSimular.IsChecked == true;
@@ -543,26 +821,35 @@ public partial class MainWindow : Window
         }
 
         _execucaoIniciada = true;
+        _fases = CriarFases();
+        ListaFases.ItemsSource = _fases;
         VistaConfirmar.Visibility = Visibility.Collapsed;
         VistaExecutar.Visibility = Visibility.Visible;
+        Animar(VistaExecutar);
+        Rolagem.ScrollToTop();
         Ocupado(true);
         DesenharPassos();
 
         var progresso = new Progress<double>(p => ProgressoExec.Value = p);
+        IProgress<double> relatar = progresso;
         var particaoCriada = false;
         try
         {
             _log.Info($"=== Início: {Modo}{(Modo == ModoFormatacao.ReinstalacaoDireta ? $" ({Tipo})" : "")}{(simular ? " · MODO DE TESTE" : "")} ===");
             if (simular) { Simular(); return; }
 
-            TxtTituloExec.Text = "A criar ponto de restauro…";
-            await SafetyService.CriarPontoRestauroAsync(_log.Info);
-            ((IProgress<double>)progresso).Report(3);
+            TxtStatusExec.Text = "Não desligue o computador até terminar.";
+            await Fase("Criar ponto de restauro", () => SafetyService.CriarPontoRestauroAsync(_log.Info), ok => ok ? "" : "indisponível");
+            relatar.Report(3);
 
-            if (Modo != ModoFormatacao.Reparar && _sistema!.BitLocker == BitLockerEstado.Ligado)
+            if (_fases.Any(f => f.Nome.StartsWith("Suspender", StringComparison.Ordinal)))
             {
-                var b = await BackupService.SuspenderBitLockerAsync(_sistema.UnidadeSistema);
-                _log.Info(b.Sucesso ? "BitLocker suspenso durante os próximos reinícios." : "Aviso: não foi possível suspender o BitLocker.");
+                await Fase("Suspender", async () =>
+                {
+                    var b = await BackupService.SuspenderBitLockerAsync(_sistema!.UnidadeSistema);
+                    _log.Info(b.Sucesso ? "BitLocker suspenso durante os próximos reinícios." : "Aviso: não foi possível suspender o BitLocker.");
+                    return b.Sucesso;
+                }, ok => ok ? "" : "não suspenso");
             }
 
             switch (Modo)
@@ -570,69 +857,106 @@ public partial class MainWindow : Window
                 case ModoFormatacao.ParticaoTemporaria:
                 {
                     var s = _sistema!;
-                    TxtTituloExec.Text = "A criar a partição temporária…";
-                    TxtStatusExec.Text = "Isto pode demorar alguns minutos.";
                     var tamanho = PartitionBootService.CalcularTamanho(new FileInfo(_caminhoIso!).Length);
-                    var letra = await PartitionBootService.CriarParticaoAsync(tamanho, s.UnidadeSistema, _log.Info);
+                    var letra = await Fase("Criar a partição", () => PartitionBootService.CriarParticaoAsync(tamanho, s.UnidadeSistema, _log.Info),
+                        l => $"{tamanho / 1024d / 1024 / 1024:0.0} GB em {l}");
                     particaoCriada = true;
-                    ((IProgress<double>)progresso).Report(8);
+                    relatar.Report(8);
 
-                    TxtTituloExec.Text = "A copiar o instalador do Windows…";
-                    var copia = new Progress<double>(p => ProgressoExec.Value = 8 + p * 0.8);
-                    await PartitionBootService.CopiarIsoAsync(_raizIso!, letra, _log.Info, copia);
-                    await PartitionBootService.EscreverLimpezaAutomaticaAsync(letra, _log.Info);
-
-                    TxtTituloExec.Text = "A configurar o arranque…";
-                    await PartitionBootService.ConfigurarArranqueAsync(letra, s.Uefi, _log.Info);
-                    await PartitionBootService.OcultarAsync(letra, _log.Info);
-                    await IsoService.DesmontarAsync(_caminhoIso!);
+                    var copia = new Progress<double>(p =>
+                    {
+                        ProgressoExec.Value = 8 + p * 0.8;
+                        FaseQueComeca("Copiar").Detalhe = $"{p:0}%";
+                    });
+                    await Fase("Copiar", () => PartitionBootService.CopiarIsoAsync(_raizIso!, letra, _log.Info, copia));
+                    FaseQueComeca("Copiar").Detalhe = "";
+                    await Fase("Preparar a limpeza", () => PartitionBootService.EscreverLimpezaAutomaticaAsync(letra, _log.Info));
+                    await Fase("Configurar o arranque", () => PartitionBootService.ConfigurarArranqueAsync(letra, s.Uefi, _log.Info));
+                    await Fase("Ocultar", async () =>
+                    {
+                        await PartitionBootService.OcultarAsync(letra, _log.Info);
+                        await IsoService.DesmontarAsync(_caminhoIso!);
+                    });
                     _caminhoIso = null;
-                    ((IProgress<double>)progresso).Report(100);
+                    relatar.Report(100);
 
                     TxtTituloExec.Text = "Pronto para reiniciar";
-                    TxtStatusExec.Text =
-                        "Ao reiniciar, o PC abre o instalador oficial do Windows.\n" +
-                        "1. Escolha o idioma e clique em Instalar.\n" +
-                        "2. Escolha a instalação Personalizada (ou \"Instalar o Windows\" e depois a lista de discos).\n" +
+                    TxtStatusExec.Text = "";
+                    MostrarConclusao(true, "Tudo preparado. Ao reiniciar, abre o instalador oficial do Windows.",
+                        "1. Escolha o idioma e carregue em Seguinte e Instalar.\n" +
+                        "2. Escolha a instalação personalizada para ver a lista de discos.\n" +
                         $"3. Apague a partição do Windows antigo ({s.UnidadeSistema}) e instale no espaço não alocado.\n" +
-                        "4. Não apague a partição VINOVIM_BOOT: é de lá que vêm os ficheiros. Ela é removida sozinha no fim.";
+                        "4. Não apague a partição VINOVIM_BOOT: é de lá que vêm os ficheiros. É removida sozinha no fim.");
                     BtnReiniciar.Visibility = Visibility.Visible;
                     break;
                 }
 
                 case ModoFormatacao.ReinstalacaoDireta:
-                    TxtTituloExec.Text = "A iniciar o instalador do Windows…";
-                    _log.Info($"\"{SetupService.CaminhoSetup(_raizIso!)}\" {SetupService.MontarArgumentos(Tipo)}");
-                    SetupService.Iniciar(_raizIso!, Tipo);
+                    await Fase("Iniciar o instalador", () =>
+                    {
+                        _log.Info($"\"{SetupService.CaminhoSetup(_raizIso!)}\" {SetupService.MontarArgumentos(Tipo)}");
+                        SetupService.Iniciar(_raizIso!, Tipo);
+                        return Task.CompletedTask;
+                    });
                     _setupIniciado = true;
-                    ((IProgress<double>)progresso).Report(100);
+                    relatar.Report(100);
                     TxtTituloExec.Text = "Instalador iniciado";
-                    TxtStatusExec.Text = "O instalador oficial está a preparar os ficheiros e depois reinicia o PC várias vezes. Pode demorar de 30 a 90 minutos. Não desligue o computador e não ejete a ISO.";
+                    TxtStatusExec.Text = "";
+                    MostrarConclusao(true, "O instalador oficial do Windows está a trabalhar.",
+                        "Primeiro prepara os ficheiros, depois reinicia o PC várias vezes. Pode demorar de 30 a 90 minutos.\n" +
+                        "Não desligue o computador e não ejete a ISO. Pode fechar esta janela.");
                     break;
 
                 case ModoFormatacao.Reparar:
-                    TxtTituloExec.Text = "A reparar o Windows…";
-                    TxtStatusExec.Text = "DISM, SFC e Ambiente de Recuperação. Não desligue o PC.";
-                    var ok = await RepairService.RepararAsync(_raizIso, _log.Info, progresso);
+                {
+                    var dism = FaseQueComeca("DISM");
+                    var sfc = FaseQueComeca("SFC");
+                    var winre = FaseQueComeca("Ativar");
+                    dism.Estado = EstadoFase.EmCurso;
+                    var reparar = new Progress<double>(p =>
+                    {
+                        ProgressoExec.Value = p;
+                        var atual = p < 60 ? dism : p < 95 ? sfc : winre;
+                        foreach (var f in new[] { dism, sfc, winre })
+                        {
+                            if (f == atual) { f.Estado = EstadoFase.EmCurso; TxtTituloExec.Text = f.Nome + "…"; }
+                            else if (Array.IndexOf(new[] { dism, sfc, winre }, f) < Array.IndexOf(new[] { dism, sfc, winre }, atual)) f.Estado = EstadoFase.Feito;
+                        }
+                        if (atual == dism) dism.Detalhe = $"{p / 60 * 100:0}%";
+                        else if (atual == sfc) { dism.Detalhe = ""; sfc.Detalhe = $"{(p - 60) / 35 * 100:0}%"; }
+                        else sfc.Detalhe = "";
+                    });
+                    var ok = await RepairService.RepararAsync(_raizIso, _log.Info, reparar);
+                    foreach (var f in new[] { dism, sfc, winre }) { f.Estado = EstadoFase.Feito; f.Detalhe = ""; }
+                    if (!ok) winre.Detalhe = "com avisos";
                     TxtTituloExec.Text = ok ? "Reparação concluída" : "Reparação concluída com avisos";
-                    TxtStatusExec.Text = ok
-                        ? "Reinicie o PC. Depois, \"Definições → Sistema → Recuperação → Repor este PC\" deve voltar a funcionar."
-                        : "Alguns passos falharam (veja o registo). Se o \"Repor este PC\" continuar avariado, use o Modo 1 ou o Modo 2.";
+                    TxtStatusExec.Text = "";
+                    MostrarConclusao(ok, ok ? "O sistema foi reparado." : "Alguns passos não correram bem.",
+                        ok ? "Reinicie o PC. Depois, Definições, Sistema, Recuperação, Repor este PC deve voltar a funcionar."
+                           : "Veja o registo detalhado. Se o Repor este PC continuar avariado, use o Modo 1 ou o Modo 2.");
                     BtnReiniciar.Visibility = Visibility.Visible;
                     break;
+                }
             }
             _log.Info("=== Concluído ===");
         }
         catch (Exception ex)
         {
             TxtTituloExec.Text = "Ocorreu um erro";
-            TxtStatusExec.Text = ex.Message;
+            TxtStatusExec.Text = "";
             _log.Info("ERRO: " + ex);
+            foreach (var f in _fases.Where(f => f.Estado == EstadoFase.EmCurso)) f.Estado = EstadoFase.Erro;
+            var desfeito = "";
             if (particaoCriada)
             {
                 _log.Info("A desfazer: remover a partição temporária…");
-                await PartitionBootService.LimparAsync(_log.Info);
+                desfeito = await PartitionBootService.LimparAsync(_log.Info)
+                    ? "\nA partição temporária foi removida e o disco ficou como estava."
+                    : "\nNão foi possível remover a partição temporária: abra a app de novo e use \"Remover partição\" no passo 2.";
             }
+            MostrarConclusao(false, "A operação parou antes de alterar o arranque.", ex.Message + desfeito);
+            TxtLog.Visibility = Visibility.Visible;
+            BtnMostrarLog.Content = "Ocultar registo detalhado";
         }
         finally
         {
@@ -663,10 +987,23 @@ public partial class MainWindow : Window
                 _log.Info("reagentc /enable");
                 break;
         }
+        foreach (var f in _fases) { f.Estado = EstadoFase.Saltada; f.Detalhe = "teste"; }
         TxtTituloExec.Text = "Teste concluído";
-        TxtStatusExec.Text = "Nada foi alterado. Feche a aplicação e abra-a de novo para executar a sério.";
+        TxtStatusExec.Text = "";
         ProgressoExec.Value = 100;
+        MostrarConclusao(true, "Modo de teste: nada foi alterado.",
+            "O registo detalhado mostra cada comando que seria executado. Para executar a sério, feche a app, abra-a de novo e desligue o modo de teste.");
+        TxtLog.Visibility = Visibility.Visible;
+        BtnMostrarLog.Content = "Ocultar registo detalhado";
         _log.Info("=== Modo de teste: nada foi alterado ===");
+    }
+
+    private void BtnMostrarLog_Click(object sender, RoutedEventArgs e)
+    {
+        var mostrar = TxtLog.Visibility != Visibility.Visible;
+        TxtLog.Visibility = mostrar ? Visibility.Visible : Visibility.Collapsed;
+        BtnMostrarLog.Content = mostrar ? "Ocultar registo detalhado" : "Mostrar registo detalhado";
+        if (mostrar) { Animar(TxtLog); TxtLog.ScrollToEnd(); }
     }
 
     private void BtnReiniciar_Click(object sender, RoutedEventArgs e) => PerguntarReiniciar();
